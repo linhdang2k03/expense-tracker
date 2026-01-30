@@ -1,45 +1,40 @@
 package com.example.expense_tracker.service;
 
-import com.example.expense_tracker.model.User;
-import com.example.expense_tracker.model.enumeration.Role;
 import com.example.expense_tracker.repository.UserRepository;
-import com.example.expense_tracker.service.dto.LoginDTO;
-import com.example.expense_tracker.service.dto.RegisterDTO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
-    final UserRepository userRepository;
-    final PasswordEncoder passwordEncoder;
 
-    public void register (RegisterDTO registerDTO) {
-        if(userRepository.existsByUsername(registerDTO.getUsername())) {
-            throw new RuntimeException("Username is already in use");
-        }
+    private final AuthenticationManager authenticationManager;
+    private final JwtEncoder jwtEncoder;
+    private final UserRepository userRepository;
 
-        if(userRepository.existsByEmail(registerDTO.getEmail())) {
-            throw new RuntimeException("Email is already in use");
-        }
+    @Value("${jwt.expiration}")
+    private long expiration;
 
-        User user = new User();
-        user.setUsername(registerDTO.getUsername());
-        user.setPassword(passwordEncoder.encode(registerDTO.getPassword()));
-        user.setEmail(registerDTO.getEmail());
-        user.setRole(Role.USER);
-        user.setCreatedDate(LocalDateTime.now());
+    public String login(String username, String password) {
+        authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(username, password));
 
-        userRepository.save(user);
-    }
+        var user = userRepository.findByUsername(username).orElseThrow();
 
-    public String Login(LoginDTO loginDTO) {
-        return "Login Success";
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .subject(user.getUsername())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(expiration))
+                .claim("role", user.getRole())
+                .build();
+
+        return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
 }
